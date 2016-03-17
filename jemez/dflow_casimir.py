@@ -9,7 +9,7 @@ from numpy import fromstring, reshape
 from pandas import Series
 
 
-def casimir(vegetation_map, shear_map, shear_resistance_dict):
+def casimir(vegetation_map, zone_map, shear_map, shear_resistance_dict):
     """
     Simple version of the CASiMiR model for vegetation succession. Before the
     model is run, we check that all the unique values from vegetation_map are
@@ -40,6 +40,11 @@ def casimir(vegetation_map, shear_map, shear_resistance_dict):
     elif not isinstance(shear_map, ESRIAsc):
         raise TypeError('shear_map must be type str or ESRIAsc')
 
+    if type(zone_map) is str:
+        zone_map = ESRIAsc(zone_map)
+    elif not isinstance(zone_map, ESRIAsc):
+        raise TypeError('zone_map must be type str of ESRIAsc')
+
     if type(shear_resistance_dict) is str:
         try:
             shear_resistance_dict = json.load(open(shear_resistance_dict))
@@ -66,7 +71,7 @@ def casimir(vegetation_map, shear_map, shear_resistance_dict):
 
         if veg_needs_reset:
             # reset vegetation to age zero while retaining veg type
-            ret_veg_map.data[idx] -= vegetation_map.data[idx] % 100
+            ret_veg_map.data[idx] = zone_map.data[idx]
 
         # whether or not the vegetation was destroyed, age by one
         if is_not_nodata:
