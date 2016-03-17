@@ -3,13 +3,37 @@ Utilities for interacting with dflow and casimir models via the virtual
 watershed.
 """
 import copy
-import json
 
-from numpy import fromstring, reshape
-from pandas import Series
+# from netCDF4 import Dataset
+from numpy import array, fromstring, meshgrid, reshape, flipud
+from scipy.interpolate import griddata
+from pandas import read_excel
 
 
-def casimir(vegetation_map, zone_map, shear_map, shear_resistance_dict):
+def casimir_with_dflow_io(vegetation_map, zone_map,
+                          shear_mesh, shear_resistance_dict):
+    """
+    Wrapper for using DFLOW input/output with casimir. Note instead of
+    shear_map we have shear_mesh. Use shear_mesh_to_asc to convert the
+    shear_mesh that comes from D-FLOW to a shear_map for input to casimir.
+    When casimir finishes its vegetation updates, convert the updated
+    vegetation map to a Manning n-value map for use by DFLOW. See the
+    casimir function below for more details on the model and arguments.
+
+    Arguments:
+        vegetation_map (str or ESRIAsc): location on disk or ESRIAsc
+            representation of the vegetation map
+        zone_map (str or ESRIAsc): location on disk or ESRIAsc representation
+            of the zone map.
+        shear_mesh (str): location on disk of DFLOW shear output netCDF
+        shear_resistance_dict (str or dict): location on disk or dictionary
+            representation of the resistance dictionary that maps
+            vegetation type to shear resistance.
+    """
+    pass
+
+
+def casimir(vegetation_map, zone_map, shear_map, casimir_required_data):
     """
     Simple version of the CASiMiR model for vegetation succession. Before the
     model is run, we check that all the unique values from vegetation_map are
@@ -20,11 +44,14 @@ def casimir(vegetation_map, zone_map, shear_map, shear_resistance_dict):
     Arguments:
         vegetation_map (str or ESRIAsc): location on disk or ESRIAsc
             representation of the vegetation map
+        zone_map (str or ESRIAsc): location on disk or ESRIAsc representation
+            of the zone map.
         shear_map (str or ESRIAsc): location on disk or ESRIAsc representation
             of the shear stress map
-        shear_resistance_dict (str or dict): location on disk or dictionary
-            representation of the resistance dictionary that maps
-            vegetation type to shear resistance.
+        casimir_required_data (str): Excel spreadsheet of data needed for
+            casimir run. Encompasses the landscape model for the watershed.
+            Can have one or two 'Code' columns and must have exactly one
+            'shear_resis' column and exactly one 'n_val' column
 
     Returns:
         (ESRIAsc) vegetation map updated with new values corresponding to
@@ -45,22 +72,26 @@ def casimir(vegetation_map, zone_map, shear_map, shear_resistance_dict):
     elif not isinstance(zone_map, ESRIAsc):
         raise TypeError('zone_map must be type str of ESRIAsc')
 
-    if type(shear_resistance_dict) is str:
-        try:
-            shear_resistance_dict = json.load(open(shear_resistance_dict))
-        except ValueError:
-            raise ValueError(
-                'The shear_resistance_dict file is not valid JSON!'
-            )
-    elif not isinstance(shear_resistance_dict, dict):
-        raise TypeError('shear_resistance_dict must be type str or dict')
+    if type(casimir_required_data) is str:
+        cas_df = read_excel(casimir_required_data)
+
+        # sanity check to make sure our lookup is correct
+        assert 'Code.1' in cas_df  # TODO generalize later
+        assert 'shear_resis' in cas_df
+
+        shear_resistance_dict = dict(
+            zip(cas_df['Code.1'], cas_df['shear_resis'])
+        )
+
+    else:
+        raise TypeError('shear_resistance_dict must be type str')
 
     # init the vegetation map that will be returned
     ret_veg_map = copy.deepcopy(vegetation_map)
 
     for idx in range(len(shear_map.data)):
         # determine whether or not the vegetation should be reset to age zero
-        shear_val_int = str(int(vegetation_map.data[idx]))
+        shear_val_int = int(vegetation_map.data[idx])
 
         is_not_nodata = shear_map.data[idx] != shear_map.NODATA_value
 
@@ -70,7 +101,7 @@ def casimir(vegetation_map, zone_map, shear_map, shear_resistance_dict):
         )
 
         if veg_needs_reset:
-            # reset vegetation to age zero while retaining veg type
+            # reset vegetation to age zero with veg type appropriate to zone
             ret_veg_map.data[idx] = zone_map.data[idx]
 
         # whether or not the vegetation was destroyed, age by one
@@ -100,12 +131,12 @@ def shear_mesh_to_asc(dflow_out_nc_path, west_easting_val, n_eastings,
         (ESRIAsc) representation of gridded representation of the mesh shear
             stress data output from dflow
     """
-    dflow_ds = open_dataset(dflow_out_nc_path)
+    dflow_ds = Dataset(dflow_out_nc_path, 'r')
 
     # the mesh locations are the x and y centers of the Flow (Finite) Elements
-    mesh_x = dflow_ds.FlowElem_xcc
-    mesh_y = dflow_ds.FlowElem_ycc
-    mesh_shear = dflow_ds.taus[-1]  # take the last timestep
+    mesh_x = dflow_ds.variables['FlowElem_xcc'][:]
+    mesh_y = dflow_ds.variables['FlowElem_ycc'][:]
+    mesh_shear = dflow_ds.variables['taus'][-1]  # take the last timestep
 
     x = array([west_easting_val + (i*cellsize) for i in range(n_eastings)])
 
@@ -119,7 +150,7 @@ def shear_mesh_to_asc(dflow_out_nc_path, west_easting_val, n_eastings,
     # not sure why, but this makes it align with the original vegetation map
     asc_mat = flipud(asc_mat)
 
-    data = Series(reshape(asc_mat, (n_eastings * n_northings)))
+    data = reshape(asc_mat, (n_eastings * n_northings))
 
     return ESRIAsc(ncols=n_eastings, nrows=n_northings,
                    xllcorner=west_easting_val, yllcorner=south_northing_val,
@@ -161,7 +192,7 @@ class ESRIAsc:
             # seems to be for CASiMiR
             data_str = ' '.join([l.strip() for l in f.readlines()])
 
-            self.data = Series(fromstring(data_str, dtype=float, sep=' '))
+            self.data = fromstring(data_str, dtype=float, sep=' ')
 
             colrow_prod = self.nrows*self.ncols
 

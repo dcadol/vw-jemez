@@ -43,11 +43,11 @@ class TestDflow(unittest.TestCase):
         # test results when loaded from file
         veg_map_file = self.ascii_veg
         shear_map_file = 'test/data/shear.asc'
-        shear_resistance_dict_file = 'test/data/resistance.json'
+        casimir_required_data = 'test/data/resist_manning_lookup.xlsx'
         zone_map_file = 'test/data/zonemap.asc'
 
         generated_output = casimir(veg_map_file, zone_map_file, shear_map_file,
-                                   shear_resistance_dict_file)
+                                   casimir_required_data)
 
         assert expected_output == generated_output, \
             "expected: {}\ngenerated: {}".format(
@@ -58,12 +58,17 @@ class TestDflow(unittest.TestCase):
         veg_map = ESRIAsc(veg_map_file)
         zone_map = ESRIAsc(zone_map_file)
         shear_map = ESRIAsc(shear_map_file)
-        shear_resistance_dict = json.load(open(shear_resistance_dict_file))
 
         generated_output = casimir(veg_map, zone_map,
-                                   shear_map, shear_resistance_dict)
+                                   shear_map, casimir_required_data)
 
         assert expected_output == generated_output, \
             "expected: {}\ngenerated: {}".format(
                 expected_output.as_matrix(), generated_output.as_matrix()
             )
+
+    def test_casimir_with_dflow_io(self):
+        assert False
+
+    def test_mesh_to_asc(self):
+        assert False
