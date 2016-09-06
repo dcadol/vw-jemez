@@ -1,6 +1,6 @@
 # vw-Jemez
 
-Functions for running our modified CASiMiR model and D-FLOW coupled
+Functions for running RipCAS (our modified CASiMiR model) and D-FLOW coupled
 model on a supercomputer.
 
 # Installation
